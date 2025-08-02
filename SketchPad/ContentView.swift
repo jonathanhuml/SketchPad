@@ -1,86 +1,114 @@
-//
-//  ContentView.swift
-//  SketchPad
-//
-//  Created by Jonathan  Huml on 8/2/25.
-//
+// === Placement ===
+// File: ContentView.swift
+// Replace your existing ContentView.swift entirely with this file.
+// Sidebar (files) on the left, drawing canvas in the main detail.
 
 import SwiftUI
-import CoreData
+import PencilKit
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
+    @StateObject private var store = SketchStore()
 
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
+    // Drawing shown in the detail canvas
+    @State private var current = PKDrawing()
+
+    // Selected sketch in the sidebar (nil = new/unsaved)
+    @State private var selection: Sketch?
+
+    // Toggle finger vs pencil-only input
+    @State private var pencilOnly = false
 
     var body: some View {
-        NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
+        NavigationSplitView {
+            // === Sidebar: saved sketches ===
+            List(selection: $selection) {
+                Section("Sketches") {
+                    ForEach(store.sketches) { sketch in
+                        HStack(spacing: 12) {
+                            Image(uiImage: sketch.thumbnail)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Text(sketch.url.deletingPathExtension().lastPathComponent)
+                                .lineLimit(1)
+                        }
+                        .tag(sketch)
                     }
+                    .onDelete(perform: delete) // <-- now resolves
                 }
-                .onDelete(perform: deleteItems)
             }
+            .navigationTitle("Sketches")
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        // Start a brand-new drawing in the detail
+                        current = PKDrawing()
+                        selection = nil
+                    } label: { Label("New", systemImage: "plus") }
+
+                    Button {
+                        do {
+                            try store.save(current)
+                            store.loadAll()
+                            // Select the newest (inserted at index 0)
+                            selection = store.sketches.first
+                        } catch {
+                            print("Save failed:", error)
+                        }
+                    } label: { Label("Save", systemImage: "square.and.arrow.down") }
+                }
+            }
+        } detail: {
+            // === Detail: drawing canvas ===
+            PKCanvasRepresentable(
+                drawing: $current,
+                isFingerDrawingEnabled: !pencilOnly
+            )
+            .ignoresSafeArea()
+            .navigationTitle(selectionTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+                    Button {
+                        pencilOnly.toggle()
+                    } label: {
+                        Label(pencilOnly ? "Pencil Only" : "Any Input",
+                              systemImage: pencilOnly ? "pencil.and.outline" : "hand.draw")
                     }
                 }
             }
-            Text("Select an item")
         }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+        // Load the chosen sketch into the canvas
+        .onChange(of: selection) { newValue in
+            if let s = newValue, let d = store.load(url: s.url) {
+                current = d
             }
         }
+        .onAppear { store.loadAll() }
+        .navigationSplitViewColumnWidth(min: 260, ideal: 300)
     }
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
+    // Title shown above the canvas
+    private var selectionTitle: String {
+        if let s = selection {
+            return s.url.deletingPathExtension().lastPathComponent
+        } else {
+            return "New Sketch"
         }
     }
-}
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
-
-#Preview {
-    ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+    // Delete rows from sidebar + remove files from disk
+    private func delete(at offsets: IndexSet) {
+        for idx in offsets {
+            guard store.sketches.indices.contains(idx) else { continue }
+            let url = store.sketches[idx].url
+            try? FileManager.default.removeItem(at: url)
+        }
+        store.loadAll()
+        if let sel = selection, !store.sketches.contains(sel) {
+            selection = nil
+            current = PKDrawing()
+        }
+    }
 }

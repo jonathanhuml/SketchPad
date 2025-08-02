@@ -1,20 +1,19 @@
+// === Placement ===
+// File: SketchPadApp.swift
+// Xcode: Replace the auto-generated file of the same name at the project root (inside your app target).
+// Purpose: App entry point that loads ContentView.
 //
-//  SketchPadApp.swift
-//  SketchPad
-//
-//  Created by Jonathan  Huml on 8/2/25.
-//
+// Notes:
+// - This file is created by Xcode automatically; just replace its contents with the below.
 
 import SwiftUI
 
 @main
 struct SketchPadApp: App {
-    let persistenceController = PersistenceController.shared
-
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
         }
     }
 }
+
