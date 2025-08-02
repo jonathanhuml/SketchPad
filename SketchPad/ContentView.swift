@@ -1,7 +1,8 @@
 // === Placement ===
 // File: ContentView.swift
-// Replace your existing ContentView.swift entirely with this file.
+// Replace your existing ContentView.swift with this file.
 // Sidebar (files) on the left, drawing canvas in the main detail.
+// Adds a BIG pencil-tip button pinned to the TOP-RIGHT of the canvas to show the Apple Pencil tool palette.
 
 import SwiftUI
 import PencilKit
@@ -17,6 +18,9 @@ struct ContentView: View {
 
     // Toggle finger vs pencil-only input
     @State private var pencilOnly = false
+
+    // Bump this to request the PKToolPicker (handled inside PKCanvasRepresentable)
+    @State private var toolPickerTrigger: Int = 0
 
     var body: some View {
         NavigationSplitView {
@@ -36,7 +40,7 @@ struct ContentView: View {
                         }
                         .tag(sketch)
                     }
-                    .onDelete(perform: delete) // <-- now resolves
+                    .onDelete(perform: delete)
                 }
             }
             .navigationTitle("Sketches")
@@ -61,25 +65,44 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            // === Detail: drawing canvas ===
-            PKCanvasRepresentable(
-                drawing: $current,
-                isFingerDrawingEnabled: !pencilOnly
-            )
-            .ignoresSafeArea()
-            .navigationTitle(selectionTitle)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        pencilOnly.toggle()
-                    } label: {
-                        Label(pencilOnly ? "Pencil Only" : "Any Input",
-                              systemImage: pencilOnly ? "pencil.and.outline" : "hand.draw")
+            // === Detail: drawing canvas + BIG top-right pencil button ===
+            ZStack(alignment: .topTrailing) {
+                PKCanvasRepresentable(
+                    drawing: $current,
+                    isFingerDrawingEnabled: !pencilOnly,
+                    toolPickerTrigger: toolPickerTrigger
+                )
+                .ignoresSafeArea()
+                .navigationTitle(selectionTitle)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            pencilOnly.toggle()
+                        } label: {
+                            Label(pencilOnly ? "Pencil Only" : "Any Input",
+                                  systemImage: pencilOnly ? "pencil.and.outline" : "hand.draw")
+                        }
                     }
                 }
+
+                // BIGGER pencil-tip button pinned to top-right to show Apple Pencil tools
+                Button {
+                    toolPickerTrigger &+= 1   // show Apple Pencil tool palette
+                } label: {
+                    Image(systemName: "pencil.tip")
+                        .font(.system(size: 30, weight: .semibold)) // larger icon
+                        .padding(20)                                 // larger tap target
+                }
+                .buttonStyle(.plain)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(.secondary, lineWidth: 1))
+                .shadow(radius: 3)
+                .padding(.top, 16)        // distance from the top safe area
+                .padding(.trailing, 24)   // distance from the right edge
+                .accessibilityLabel("Show Apple Pencil tools")
             }
         }
-        // Load the chosen sketch into the canvas
+        // Load the chosen sketch into the canvas when selection changes
         .onChange(of: selection) { newValue in
             if let s = newValue, let d = store.load(url: s.url) {
                 current = d
