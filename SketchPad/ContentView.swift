@@ -1,26 +1,25 @@
 // === Placement ===
 // File: ContentView.swift
 // Replace your existing ContentView.swift with this file.
-// Sidebar (files) on the left, drawing canvas in the main detail.
-// Adds a BIG pencil-tip button pinned to the TOP-RIGHT of the canvas to show the Apple Pencil tool palette.
+// Behavior: Sidebar + PencilKit canvas; overlays a typewriter-style text animation on the canvas; top-right pencil-tools button.
 
 import SwiftUI
 import PencilKit
 
 struct ContentView: View {
+    // MARK: – Sidebar & Canvas State
     @StateObject private var store = SketchStore()
-
-    // Drawing shown in the detail canvas
     @State private var current = PKDrawing()
-
-    // Selected sketch in the sidebar (nil = new/unsaved)
     @State private var selection: Sketch?
-
-    // Toggle finger vs pencil-only input
     @State private var pencilOnly = false
-
-    // Bump this to request the PKToolPicker (handled inside PKCanvasRepresentable)
     @State private var toolPickerTrigger: Int = 0
+
+    // MARK: – Typewriter Text Animation State
+    private let fullText = "Hello World!"
+    @State private var displayCount = 0
+    @State private var displayedText = ""
+    private let typewriterTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
+    @State private var canvasSize: CGSize = .zero
 
     var body: some View {
         NavigationSplitView {
@@ -34,7 +33,6 @@ struct ContentView: View {
                                 .scaledToFill()
                                 .frame(width: 48, height: 48)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
-
                             Text(sketch.url.deletingPathExtension().lastPathComponent)
                                 .lineLimit(1)
                         }
@@ -47,81 +45,107 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button {
-                        // Start a brand-new drawing in the detail
+                        // New sketch
                         current = PKDrawing()
                         selection = nil
-                    } label: { Label("New", systemImage: "plus") }
-
+                    } label: {
+                        Label("New", systemImage: "plus")
+                    }
                     Button {
+                        // Save current sketch
                         do {
                             try store.save(current)
                             store.loadAll()
-                            // Select the newest (inserted at index 0)
                             selection = store.sketches.first
                         } catch {
                             print("Save failed:", error)
                         }
-                    } label: { Label("Save", systemImage: "square.and.arrow.down") }
+                    } label: {
+                        Label("Save", systemImage: "square.and.arrow.down")
+                    }
                 }
             }
         } detail: {
-            // === Detail: drawing canvas + BIG top-right pencil button ===
-            ZStack(alignment: .topTrailing) {
-                PKCanvasRepresentable(
-                    drawing: $current,
-                    isFingerDrawingEnabled: !pencilOnly,
-                    toolPickerTrigger: toolPickerTrigger
-                )
-                .ignoresSafeArea()
-                .navigationTitle(selectionTitle)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            pencilOnly.toggle()
-                        } label: {
-                            Label(pencilOnly ? "Pencil Only" : "Any Input",
-                                  systemImage: pencilOnly ? "pencil.and.outline" : "hand.draw")
+            // === Detail: Canvas + Typewriter Text + Pencil Button ===
+            GeometryReader { geo in
+                // Track canvas size
+                Color.clear
+                    .onAppear { canvasSize = geo.size }
+                    .onChange(of: geo.size) { canvasSize = $0 }
+
+                ZStack(alignment: .topTrailing) {
+                    // PencilKit canvas
+                    PKCanvasRepresentable(
+                        drawing: $current,
+                        isFingerDrawingEnabled: !pencilOnly,
+                        toolPickerTrigger: toolPickerTrigger
+                    )
+                    .ignoresSafeArea()
+                    .navigationTitle(selectionTitle)
+                    .toolbar {
+                        // Toggle finger vs pencil-only
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button {
+                                pencilOnly.toggle()
+                            } label: {
+                                Label(
+                                    pencilOnly ? "Pencil Only" : "Any Input",
+                                    systemImage: pencilOnly ? "pencil.and.outline" : "hand.draw"
+                                )
+                            }
                         }
                     }
-                }
 
-                // BIGGER pencil-tip button pinned to top-right to show Apple Pencil tools
-                Button {
-                    toolPickerTrigger &+= 1   // show Apple Pencil tool palette
-                } label: {
-                    Image(systemName: "pencil.tip")
-                        .font(.system(size: 30, weight: .semibold)) // larger icon
-                        .padding(20)                                 // larger tap target
+                    Text(displayedText)
+                      .font(.system(size: 36, weight: .regular, design: .monospaced))
+                      .foregroundColor(.primary)
+                      .onReceive(typewriterTimer) { _ in
+                        // Only advance until we hit the end of the string
+                        if displayCount < fullText.count {
+                          displayCount += 1
+                          displayedText = String(fullText.prefix(displayCount))
+                        }
+                        // Once displayCount == fullText.count, we do nothing and the timer keeps firing
+                        // but the text stays at full length and never resets.
+                      }
+                      .position(x: canvasSize.width / 2, y: 80)
+                      .allowsHitTesting(false)
+
+                    // Pencil-tools button
+                    Button {
+                        toolPickerTrigger &+= 1
+                    } label: {
+                        Image(systemName: "pencil.tip")
+                            .font(.system(size: 30, weight: .semibold))
+                            .padding(20)
+                    }
+                    .buttonStyle(.plain)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(.secondary, lineWidth: 1))
+                    .shadow(radius: 3)
+                    .padding(.top, 16)
+                    .padding(.trailing, 24)
+                    .accessibilityLabel("Show Apple Pencil tools")
                 }
-                .buttonStyle(.plain)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().stroke(.secondary, lineWidth: 1))
-                .shadow(radius: 3)
-                .padding(.top, 16)        // distance from the top safe area
-                .padding(.trailing, 24)   // distance from the right edge
-                .accessibilityLabel("Show Apple Pencil tools")
             }
         }
-        // Load the chosen sketch into the canvas when selection changes
-        .onChange(of: selection) { newValue in
-            if let s = newValue, let d = store.load(url: s.url) {
+        // Sync picked sketch into the canvas
+        .onChange(of: selection) { new in
+            if let s = new, let d = store.load(url: s.url) {
                 current = d
             }
         }
+        // Load existing sketches
         .onAppear { store.loadAll() }
         .navigationSplitViewColumnWidth(min: 260, ideal: 300)
     }
 
-    // Title shown above the canvas
+    // MARK: – Helpers
+
     private var selectionTitle: String {
-        if let s = selection {
-            return s.url.deletingPathExtension().lastPathComponent
-        } else {
-            return "New Sketch"
-        }
+        selection?.url.deletingPathExtension().lastPathComponent ?? "New Sketch"
     }
 
-    // Delete rows from sidebar + remove files from disk
     private func delete(at offsets: IndexSet) {
         for idx in offsets {
             guard store.sketches.indices.contains(idx) else { continue }
