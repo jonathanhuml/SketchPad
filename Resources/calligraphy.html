@@ -2,23 +2,12 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- load the Calligraphy library first… -->
+    <script src="calligraphy-lib.js"></script>
+    <!-- …then your glue code: -->
     <script src="calligraphy.js"></script>
   </head>
   <body>
     <canvas id="canvas"></canvas>
-    <script>
-      function renderText(text) {
-        const canvas = document.getElementById("canvas");
-        const ctx = canvas.getContext("2d");
-        const brush = new Calligraphy.Brush(ctx, { size: 48 });
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        brush.draw(text, 20, 60);
-      }
-      window.addEventListener("message", (event) => {
-        if (event.data.type === "render") {
-          renderText(event.data.text);
-        }
-      });
-    </script>
   </body>
 </html>
