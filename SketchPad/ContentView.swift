@@ -1,6 +1,7 @@
 // === Placement ===
 // File: ContentView.swift
 // Replace your existing ContentView.swift with this file.
+// Adds: "Ask question" button to the right of "Start lesson", with a 2s rainbow glow on tap.
 // Fixes: declares the missing `fourthWorkItem` state so the code compiles.
 
 import SwiftUI
@@ -73,6 +74,17 @@ struct ContentView: View {
     // MARK: — Layout
     @State private var canvasSize: CGSize = .zero
 
+    // MARK: — Ask question glow state
+    @State private var askGlowing = false
+    @State private var askGlowWorkItem: DispatchWorkItem?
+
+    // Rainbow gradient used when "Ask question" is tapped
+    private var rainbowGradient: AngularGradient {
+        AngularGradient(gradient: Gradient(colors: [
+            .red, .orange, .yellow, .green, .blue, .purple, .red
+        ]), center: .center)
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
@@ -125,8 +137,7 @@ struct ContentView: View {
                 .ignoresSafeArea()
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button { pencilOnly.toggle() }
-                        label: {
+                        Button { pencilOnly.toggle() } label: {
                             Label(
                                 pencilOnly ? "Pencil Only" : "Any Input",
                                 systemImage: pencilOnly ? "pencil.and.outline" : "hand.draw"
@@ -135,18 +146,34 @@ struct ContentView: View {
                     }
                 }
 
-                // Start Lesson button
+                // Start Lesson + Ask Question buttons (top-left)
                 .overlay(
-                    Button("Start lesson") {
-                        resetAll()
-                        lessonStarted = true
-                        playAudio(named: "lesson2_1") { scheduleSecond() }
+                    HStack(spacing: 12) {
+
+                        // Start lesson button — unchanged style
+                        Button("Start lesson") {
+                            resetAll()
+                            lessonStarted = true
+                            playAudio(named: "lesson2_1") { scheduleSecond() }
+                        }
+                        .font(.headline)
+                        .padding(.vertical, 6).padding(.horizontal, 12)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .shadow(radius: 2)
+                        .accessibilityLabel("Start lesson")
+
+                        // Ask question button — same style; rainbow glow for 2 seconds on tap
+                        Button("Ask question") {
+                            askButtonTapped()
+                        }
+                        .font(.headline)
+                        .padding(.vertical, 6).padding(.horizontal, 12)
+                        .background(askGlowing ? AnyShapeStyle(rainbowGradient) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
+                        .shadow(radius: 2)
+                        .accessibilityLabel("Ask a question")
                     }
-                    .font(.headline)
-                    .padding(.vertical, 6).padding(.horizontal, 12)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .shadow(radius: 2)
-                    .padding(.top, 20).padding(.leading, 20),
+                    .padding(.top, 20)
+                    .padding(.leading, 20),
                     alignment: .topLeading
                 )
 
@@ -219,8 +246,7 @@ struct ContentView: View {
 
                 // Pencil tip button
                 .overlay(
-                    Button { toolPickerTrigger &+= 1 }
-                    label: {
+                    Button { toolPickerTrigger &+= 1 } label: {
                         Image(systemName: "pencil.tip")
                             .font(.system(size: 30, weight: .semibold))
                             .padding(20)
@@ -255,12 +281,29 @@ struct ContentView: View {
         .navigationSplitViewColumnWidth(min: 260, ideal: 300)
     }
 
+    // MARK: — Ask Question button behavior
+    private func askButtonTapped() {
+        // Trigger the 2-second rainbow glow, then revert to base style.
+        askGlowWorkItem?.cancel()
+        askGlowing = true
+        let w = DispatchWorkItem { self.askGlowing = false }
+        askGlowWorkItem = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
+
+        // (Optional) If you later want this to drive the narrative flow, hook into scheduleThird()/startThird() here.
+        // Example:
+        // if !thirdStarted { startThird() }
+    }
+
     // MARK: — Flow & Scheduling
 
     private func resetAll() {
         secondWorkItem?.cancel()
         thirdWorkItem?.cancel()
         fourthWorkItem?.cancel()
+        askGlowWorkItem?.cancel()
+        askGlowing = false
+
         lessonStarted = false
         count1 = 0; count2 = 0; count3 = 0; count4 = 0
         text2 = ""; text4 = ""
