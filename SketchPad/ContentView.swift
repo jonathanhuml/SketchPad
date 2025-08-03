@@ -1,9 +1,14 @@
 // === Placement ===
 // File: ContentView.swift
 // Replace your existing ContentView.swift with this file.
-// Adds: "Ask question" button (to the right of "Start lesson") with 2s rainbow glow on tap.
-// Adds: A 5th line below paragraph 4 — "saving progress..." — shown in italics for ~2s with cycling dots.
-// Fixes: declares the missing `fourthWorkItem` state so the code compiles.
+//
+// Adds:
+//  • "Ask question" button to the right of "Start lesson" with a 2s rainbow glow on tap.
+//  • Paragraph 5 “saving progress...” (italic) directly below paragraph 4; shows ~2s with moving dots.
+//  • After the first audio finishes: show “waiting...” (italic, moving dots) under paragraph 1 for 8s,
+//    then exactly 2s before paragraph 2 starts: flash “analyzing answer...” for ~2s.
+//  • After the “REMINDER” chunk (paragraph 3) audio finishes: repeat the same pattern relative to
+//    paragraph 4’s start (8s later) — i.e., “waiting...” for 6s, then “analyzing answer...” for 2s.
 
 import SwiftUI
 import PencilKit
@@ -67,9 +72,33 @@ struct ContentView: View {
     // MARK: — Paragraph 5 (saving flash)
     @State private var savingVisible = false
     @State private var savingDots = 1          // 1…3
-    @State private var savingFrame = 0         // drives dot animation
-    @State private var savingScheduled = false // ensure we only trigger once per cycle
+    @State private var savingFrame = 0
+    @State private var savingScheduled = false
     @State private var savingWorkItem: DispatchWorkItem?
+
+    // MARK: — Waiting/Analyzing under Paragraph 1 (after audio 1 ends)
+    @State private var wait1Visible = false
+    @State private var wait1Dots = 1
+    @State private var wait1Frame = 0
+    @State private var wait1HideWork: DispatchWorkItem?
+
+    @State private var analyze1Visible = false
+    @State private var analyze1Dots = 1
+    @State private var analyze1Frame = 0
+    @State private var analyze1HideWork: DispatchWorkItem?
+    @State private var analyze1ShowWork: DispatchWorkItem?
+
+    // MARK: — Waiting/Analyzing under Paragraph 3 (after audio 3 ends)
+    @State private var wait3Visible = false
+    @State private var wait3Dots = 1
+    @State private var wait3Frame = 0
+    @State private var wait3HideWork: DispatchWorkItem?
+
+    @State private var analyze3Visible = false
+    @State private var analyze3Dots = 1
+    @State private var analyze3Frame = 0
+    @State private var analyze3HideWork: DispatchWorkItem?
+    @State private var analyze3ShowWork: DispatchWorkItem?
 
     // MARK: — Flow & Timer
     @State private var lessonStarted = false
@@ -158,11 +187,15 @@ struct ContentView: View {
                 .overlay(
                     HStack(spacing: 12) {
 
-                        // Start lesson button — unchanged style
+                        // Start lesson button
                         Button("Start lesson") {
                             resetAll()
                             lessonStarted = true
-                            playAudio(named: "lesson2_1") { scheduleSecond() }
+                            // When audio 1 finishes, trigger waiting/analyzing for P1 and schedule P2.
+                            playAudio(named: "lesson2_1") {
+                                afterFirstAudioFinished()
+                                scheduleSecond()
+                            }
                         }
                         .font(.headline)
                         .padding(.vertical, 6).padding(.horizontal, 12)
@@ -207,6 +240,24 @@ struct ContentView: View {
                                         .allowsHitTesting(false)
                                 }
                             }
+
+                            // Waiting / Analyzing (under paragraph 1)
+                            if wait1Visible {
+                                Text("waiting" + String(repeating: ".", count: wait1Dots))
+                                    .italic()
+                                    .font(.system(size: 20, weight: .regular, design: .default))
+                                    .frame(maxWidth: canvasSize.width * 0.9, alignment: .leading)
+                                    .padding(.top, 6)
+                                    .allowsHitTesting(false)
+                            }
+                            if analyze1Visible {
+                                Text("analyzing answer" + String(repeating: ".", count: analyze1Dots))
+                                    .italic()
+                                    .font(.system(size: 20, weight: .regular, design: .default))
+                                    .frame(maxWidth: canvasSize.width * 0.9, alignment: .leading)
+                                    .padding(.top, 6)
+                                    .allowsHitTesting(false)
+                            }
                         }
 
                         // Gap before paragraph 2
@@ -223,15 +274,35 @@ struct ContentView: View {
 
                         // Paragraph 3 styled
                         if count3 > 0 {
-                            ForEach(segments3.indices, id: \.self) { i in
-                                let seg = segments3[i]
-                                let prev = segments3.prefix(i).map(\.length).reduce(0, +)
-                                let cnt = clamp(count3 - prev, lower: 0, upper: seg.length)
-                                if cnt > 0 {
-                                    Text(attributedString(for: seg, reveal: cnt))
-                                        .multilineTextAlignment(seg.isCentered ? .center : .leading)
-                                        .frame(maxWidth: canvasSize.width * 0.9,
-                                               alignment: seg.isCentered ? .center : .leading)
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(segments3.indices, id: \.self) { i in
+                                    let seg = segments3[i]
+                                    let prev = segments3.prefix(i).map(\.length).reduce(0, +)
+                                    let cnt = clamp(count3 - prev, lower: 0, upper: seg.length)
+                                    if cnt > 0 {
+                                        Text(attributedString(for: seg, reveal: cnt))
+                                            .multilineTextAlignment(seg.isCentered ? .center : .leading)
+                                            .frame(maxWidth: canvasSize.width * 0.9,
+                                                   alignment: seg.isCentered ? .center : .leading)
+                                            .allowsHitTesting(false)
+                                    }
+                                }
+
+                                // Waiting / Analyzing (under paragraph 3)
+                                if wait3Visible {
+                                    Text("waiting" + String(repeating: ".", count: wait3Dots))
+                                        .italic()
+                                        .font(.system(size: 20, weight: .regular, design: .default))
+                                        .frame(maxWidth: canvasSize.width * 0.9, alignment: .leading)
+                                        .padding(.top, 6)
+                                        .allowsHitTesting(false)
+                                }
+                                if analyze3Visible {
+                                    Text("analyzing answer" + String(repeating: ".", count: analyze3Dots))
+                                        .italic()
+                                        .font(.system(size: 20, weight: .regular, design: .default))
+                                        .frame(maxWidth: canvasSize.width * 0.9, alignment: .leading)
+                                        .padding(.top, 6)
                                         .allowsHitTesting(false)
                                 }
                             }
@@ -281,7 +352,7 @@ struct ContentView: View {
                     alignment: .topTrailing
                 )
 
-                // Typewriter driver + saving dots animation
+                // Typewriter driver + dots animation
                 .onReceive(timer) { _ in
                     guard lessonStarted else { return }
                     if count1 < totalCount1 { count1 += 1 }
@@ -293,12 +364,26 @@ struct ContentView: View {
                         count4 += 1; text4 = String(fourthText.prefix(count4))
                     }
 
-                    // Animate "saving..." dots while visible: advance ~every 4 frames (~0.28s)
+                    // Animate dots for visible indicators (~every 4 frames ≈ 0.28s)
                     if savingVisible {
                         savingFrame &+= 1
-                        if savingFrame % 4 == 0 {
-                            savingDots = (savingDots % 3) + 1 // 1→2→3→1…
-                        }
+                        if savingFrame % 4 == 0 { savingDots = (savingDots % 3) + 1 }
+                    }
+                    if wait1Visible {
+                        wait1Frame &+= 1
+                        if wait1Frame % 4 == 0 { wait1Dots = (wait1Dots % 3) + 1 }
+                    }
+                    if analyze1Visible {
+                        analyze1Frame &+= 1
+                        if analyze1Frame % 4 == 0 { analyze1Dots = (analyze1Dots % 3) + 1 }
+                    }
+                    if wait3Visible {
+                        wait3Frame &+= 1
+                        if wait3Frame % 4 == 0 { wait3Dots = (wait3Dots % 3) + 1 }
+                    }
+                    if analyze3Visible {
+                        analyze3Frame &+= 1
+                        if analyze3Frame % 4 == 0 { analyze3Dots = (analyze3Dots % 3) + 1 }
                     }
                 }
             }
@@ -319,26 +404,81 @@ struct ContentView: View {
 
     // MARK: — Ask Question button behavior
     private func askButtonTapped() {
-        // Trigger the 2-second rainbow glow, then revert to base style.
         askGlowWorkItem?.cancel()
         askGlowing = true
         let w = DispatchWorkItem { self.askGlowing = false }
         askGlowWorkItem = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
-
-        // Hook into narrative if desired later (e.g., startThird()).
     }
 
-    // MARK: — Saving flash behavior
+    // MARK: — After audio 1 finishes → show waiting (8s) then analyzing (2s before P2 starts)
+    private func afterFirstAudioFinished() {
+        // P2 is scheduled 10s after audio 1 → show waiting for 8s, then analyzing for 2s.
+        showWaiting1(duration: 8.0)
+        scheduleAnalyzing1(showAfter: 8.0, duration: 2.0)
+    }
+
+    private func showWaiting1(duration: Double) {
+        wait1HideWork?.cancel()
+        wait1Frame = 0
+        wait1Dots = 1
+        wait1Visible = true
+        let hide = DispatchWorkItem { self.wait1Visible = false }
+        wait1HideWork = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: hide)
+    }
+
+    private func scheduleAnalyzing1(showAfter: Double, duration: Double) {
+        analyze1ShowWork?.cancel()
+        analyze1HideWork?.cancel()
+        analyze1Frame = 0
+        analyze1Dots = 1
+        let show = DispatchWorkItem { self.analyze1Visible = true }
+        analyze1ShowWork = show
+        let hide = DispatchWorkItem { self.analyze1Visible = false }
+        analyze1HideWork = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + showAfter, execute: show)
+        DispatchQueue.main.asyncAfter(deadline: .now() + showAfter + duration, execute: hide)
+    }
+
+    // MARK: — After audio 3 finishes (“REMINDER”) → waiting then analyzing before P4
+    private func afterThirdAudioFinished() {
+        // P4 is scheduled 8s after audio 3 → mirror behavior:
+        // waiting for 6s, then analyzing for the last 2s before P4 starts.
+        showWaiting3(duration: 6.0)
+        scheduleAnalyzing3(showAfter: 6.0, duration: 2.0)
+    }
+
+    private func showWaiting3(duration: Double) {
+        wait3HideWork?.cancel()
+        wait3Frame = 0
+        wait3Dots = 1
+        wait3Visible = true
+        let hide = DispatchWorkItem { self.wait3Visible = false }
+        wait3HideWork = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: hide)
+    }
+
+    private func scheduleAnalyzing3(showAfter: Double, duration: Double) {
+        analyze3ShowWork?.cancel()
+        analyze3HideWork?.cancel()
+        analyze3Frame = 0
+        analyze3Dots = 1
+        let show = DispatchWorkItem { self.analyze3Visible = true }
+        analyze3ShowWork = show
+        let hide = DispatchWorkItem { self.analyze3Visible = false }
+        analyze3HideWork = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + showAfter, execute: show)
+        DispatchQueue.main.asyncAfter(deadline: .now() + showAfter + duration, execute: hide)
+    }
+
+    // MARK: — Saving flash behavior (after paragraph 4 completes typing)
     private func startSavingFlash() {
         savingWorkItem?.cancel()
         savingVisible = true
         savingDots = 1
         savingFrame = 0
-
-        let hide = DispatchWorkItem {
-            self.savingVisible = false
-        }
+        let hide = DispatchWorkItem { self.savingVisible = false }
         savingWorkItem = hide
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: hide)
     }
@@ -346,18 +486,36 @@ struct ContentView: View {
     // MARK: — Flow & Scheduling
 
     private func resetAll() {
+        // Cancel scheduled work
         secondWorkItem?.cancel()
         thirdWorkItem?.cancel()
         fourthWorkItem?.cancel()
         askGlowWorkItem?.cancel()
         savingWorkItem?.cancel()
 
+        wait1HideWork?.cancel()
+        analyze1HideWork?.cancel()
+        analyze1ShowWork?.cancel()
+
+        wait3HideWork?.cancel()
+        analyze3HideWork?.cancel()
+        analyze3ShowWork?.cancel()
+
+        // Reset indicators
         askGlowing = false
+
         savingVisible = false
         savingScheduled = false
         savingDots = 1
         savingFrame = 0
 
+        wait1Visible = false; wait1Dots = 1; wait1Frame = 0
+        analyze1Visible = false; analyze1Dots = 1; analyze1Frame = 0
+
+        wait3Visible = false; wait3Dots = 1; wait3Frame = 0
+        analyze3Visible = false; analyze3Dots = 1; analyze3Frame = 0
+
+        // Reset flow
         lessonStarted = false
         count1 = 0; count2 = 0; count3 = 0; count4 = 0
         text2 = ""; text4 = ""
@@ -388,14 +546,17 @@ struct ContentView: View {
     private func startThird() {
         thirdStarted = true
         count3 = 0
-        playAudio(named: "answer_question") { scheduleFourth() }
+        // When audio 3 finishes, trigger waiting/analyzing for P3 and schedule P4.
+        playAudio(named: "answer_question") {
+            afterThirdAudioFinished()
+            scheduleFourth()
+        }
     }
 
     private func scheduleFourth() {
         guard !scheduled4 else { return }
         scheduled4 = true
 
-        // create a work item that actually starts para 4
         let work = DispatchWorkItem {
             fourthStarted = true
             count4 = 0
@@ -404,7 +565,7 @@ struct ContentView: View {
         }
         fourthWorkItem = work
 
-        // fire it 8 seconds after para-3 audio finishes
+        // P4 starts 8 seconds after para-3 audio finishes
         DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: work)
     }
 
