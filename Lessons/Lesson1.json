@@ -1,0 +1,11 @@
+{
+  "title": "Basic Addition",
+  "segments": [
+    {
+      "type": "narration",
+      "text": "Welcome to basic addition. Today we'll learn how to add two numbers."
+    },
+    { "type": "practice", "question": "What is 3 + 4?", "answer": "7" },
+    { "type": "narration", "text": "Correct! 3 plus 4 is 7." }
+  ]
+}
