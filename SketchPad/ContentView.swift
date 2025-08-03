@@ -44,8 +44,8 @@ struct ContentView: View {
 
     // MARK: — Paragraph 3 (markup)
     private let thirdText = """
-    Okay, great! Here's a quick reminder about the Chain Rule: \
-    *new line* bold{REMINDER:} d/dx f(g(x)) = f'(g(x)) * g(x).
+    Good question! Here's a quick reminder about the Chain Rule: \
+    *new line* bold{REMINDER:} d/dx f(g(x)) = f'(g(x)) * g'(x).
     """
     @State private var segments3: [Segment] = []
     @State private var totalCount3 = 0
@@ -55,7 +55,7 @@ struct ContentView: View {
     @State private var thirdWorkItem: DispatchWorkItem?
 
     // MARK: — Paragraph 4 (plain)
-    private let fourthText = "Correct, awesome work!"
+    private let fourthText = "Correct! Great job. Let's start a guided example."
     @State private var text4 = ""
     @State private var count4 = 0
     @State private var fourthStarted = false
