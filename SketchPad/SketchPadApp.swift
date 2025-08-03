@@ -10,10 +10,10 @@ import SwiftUI
 
 @main
 struct SketchPadApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+  var body: some Scene {
+    WindowGroup {
+      ContentView()   // now ContentView is your LessonViewController in disguise
+        .edgesIgnoringSafeArea(.all)
     }
+  }
 }
-
