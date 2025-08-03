@@ -1,7 +1,8 @@
 // === Placement ===
 // File: ContentView.swift
 // Replace your existing ContentView.swift with this file.
-// Adds: "Ask question" button to the right of "Start lesson", with a 2s rainbow glow on tap.
+// Adds: "Ask question" button (to the right of "Start lesson") with 2s rainbow glow on tap.
+// Adds: A 5th line below paragraph 4 — "saving progress..." — shown in italics for ~2s with cycling dots.
 // Fixes: declares the missing `fourthWorkItem` state so the code compiles.
 
 import SwiftUI
@@ -62,6 +63,13 @@ struct ContentView: View {
     @State private var fourthStarted = false
     @State private var scheduled4 = false
     @State private var fourthWorkItem: DispatchWorkItem?  // ← Added missing declaration
+
+    // MARK: — Paragraph 5 (saving flash)
+    @State private var savingVisible = false
+    @State private var savingDots = 1          // 1…3
+    @State private var savingFrame = 0         // drives dot animation
+    @State private var savingScheduled = false // ensure we only trigger once per cycle
+    @State private var savingWorkItem: DispatchWorkItem?
 
     // MARK: — Flow & Timer
     @State private var lessonStarted = false
@@ -168,7 +176,10 @@ struct ContentView: View {
                         }
                         .font(.headline)
                         .padding(.vertical, 6).padding(.horizontal, 12)
-                        .background(askGlowing ? AnyShapeStyle(rainbowGradient) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(
+                            Capsule().fill(rainbowGradient).opacity(askGlowing ? 1 : 0)
+                        )
                         .shadow(radius: 2)
                         .accessibilityLabel("Ask a question")
                     }
@@ -210,7 +221,7 @@ struct ContentView: View {
                                 .allowsHitTesting(false)
                         }
 
-                        // Paragraph 3 styled (immediately after)
+                        // Paragraph 3 styled
                         if count3 > 0 {
                             ForEach(segments3.indices, id: \.self) { i in
                                 let seg = segments3[i]
@@ -237,6 +248,16 @@ struct ContentView: View {
                                 .allowsHitTesting(false)
                         }
 
+                        // Paragraph 5 — "saving progress..." directly below paragraph 4 (italic), 2s flash with moving dots
+                        if savingVisible {
+                            Text("saving progress" + String(repeating: ".", count: savingDots))
+                                .italic()
+                                .font(.system(size: 20, weight: .regular, design: .default))
+                                .frame(maxWidth: canvasSize.width * 0.9, alignment: .leading)
+                                .padding(.top, 8)
+                                .allowsHitTesting(false)
+                        }
+
                         Spacer().allowsHitTesting(false)
                     }
                     .padding(.leading, 20).padding(.top, 20)
@@ -260,7 +281,7 @@ struct ContentView: View {
                     alignment: .topTrailing
                 )
 
-                // Typewriter driver
+                // Typewriter driver + saving dots animation
                 .onReceive(timer) { _ in
                     guard lessonStarted else { return }
                     if count1 < totalCount1 { count1 += 1 }
@@ -271,6 +292,14 @@ struct ContentView: View {
                     if fourthStarted && count4 < fourthText.count {
                         count4 += 1; text4 = String(fourthText.prefix(count4))
                     }
+
+                    // Animate "saving..." dots while visible: advance ~every 4 frames (~0.28s)
+                    if savingVisible {
+                        savingFrame &+= 1
+                        if savingFrame % 4 == 0 {
+                            savingDots = (savingDots % 3) + 1 // 1→2→3→1…
+                        }
+                    }
                 }
             }
         }
@@ -278,6 +307,13 @@ struct ContentView: View {
             if let d = store.load(url: s!.url) { current = d }
         }
         .onAppear { store.loadAll() }
+        .onChange(of: count4) { newVal in
+            // When paragraph 4 finishes typing, trigger the 2-second "saving..." flash once.
+            if newVal == fourthText.count && !savingScheduled {
+                savingScheduled = true
+                startSavingFlash()
+            }
+        }
         .navigationSplitViewColumnWidth(min: 260, ideal: 300)
     }
 
@@ -290,9 +326,21 @@ struct ContentView: View {
         askGlowWorkItem = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
 
-        // (Optional) If you later want this to drive the narrative flow, hook into scheduleThird()/startThird() here.
-        // Example:
-        // if !thirdStarted { startThird() }
+        // Hook into narrative if desired later (e.g., startThird()).
+    }
+
+    // MARK: — Saving flash behavior
+    private func startSavingFlash() {
+        savingWorkItem?.cancel()
+        savingVisible = true
+        savingDots = 1
+        savingFrame = 0
+
+        let hide = DispatchWorkItem {
+            self.savingVisible = false
+        }
+        savingWorkItem = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: hide)
     }
 
     // MARK: — Flow & Scheduling
@@ -302,7 +350,13 @@ struct ContentView: View {
         thirdWorkItem?.cancel()
         fourthWorkItem?.cancel()
         askGlowWorkItem?.cancel()
+        savingWorkItem?.cancel()
+
         askGlowing = false
+        savingVisible = false
+        savingScheduled = false
+        savingDots = 1
+        savingFrame = 0
 
         lessonStarted = false
         count1 = 0; count2 = 0; count3 = 0; count4 = 0
