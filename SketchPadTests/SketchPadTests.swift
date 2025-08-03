@@ -9,9 +9,10 @@ import Testing
 @testable import SketchPad
 
 struct SketchPadTests {
-
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    @Test func lessonsLoad() throws {
+        let service = LessonService()
+        let lessons = service.fetchLessons()
+        #expect(!lessons.isEmpty)
     }
 
 }
