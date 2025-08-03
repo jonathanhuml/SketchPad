@@ -1,7 +1,8 @@
 // === Placement ===
 // File: ContentView.swift
 // Replace your existing ContentView.swift with this file.
-// Behavior: Sidebar + PencilKit canvas; overlays a typewriter-style text animation on the canvas; top-right pencil-tools button.
+// Behavior: Sidebar + PencilKit canvas; typewriter text wraps into multiple lines
+// flowing downward; pencil-tools button remains in top-right.
 
 import SwiftUI
 import PencilKit
@@ -15,10 +16,22 @@ struct ContentView: View {
     @State private var toolPickerTrigger: Int = 0
 
     // MARK: – Typewriter Text Animation State
-    private let fullText = "Hello World!"
+    private let fullText = """
+    Welcome to section 2.1 of Stewart's Calculus of Transcendentals. \
+    In this section, we'll be exploring rules of differentiation for \
+    special functions, like logarithms, inverse trigonometric functions, \
+    and exponentials. First, we'll go over one of our favorite functions: \
+    the natural logarithm. Here's the rule: d/dx ln(x) = 1/x. 
+    
+    Let's try an example together first. ry to differentiate f(x) = ln(2x+1). 
+    
+    Look arcane? No worries, let's go over a quick sketch of a proof. [SKIP] 
+    """
     @State private var displayCount = 0
     @State private var displayedText = ""
     private let typewriterTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
+
+    // Track canvas size for proper wrapping width
     @State private var canvasSize: CGSize = .zero
 
     var body: some View {
@@ -45,14 +58,12 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button {
-                        // New sketch
                         current = PKDrawing()
                         selection = nil
                     } label: {
                         Label("New", systemImage: "plus")
                     }
                     Button {
-                        // Save current sketch
                         do {
                             try store.save(current)
                             store.loadAll()
@@ -66,52 +77,49 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            // === Detail: Canvas + Typewriter Text + Pencil Button ===
+            // === Detail: Canvas + wrapping typewriter text + pencil button ===
             GeometryReader { geo in
-                // Track canvas size
                 Color.clear
                     .onAppear { canvasSize = geo.size }
                     .onChange(of: geo.size) { canvasSize = $0 }
 
-                ZStack(alignment: .topTrailing) {
-                    // PencilKit canvas
-                    PKCanvasRepresentable(
-                        drawing: $current,
-                        isFingerDrawingEnabled: !pencilOnly,
-                        toolPickerTrigger: toolPickerTrigger
-                    )
-                    .ignoresSafeArea()
-                    .navigationTitle(selectionTitle)
-                    .toolbar {
-                        // Toggle finger vs pencil-only
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button {
-                                pencilOnly.toggle()
-                            } label: {
-                                Label(
-                                    pencilOnly ? "Pencil Only" : "Any Input",
-                                    systemImage: pencilOnly ? "pencil.and.outline" : "hand.draw"
-                                )
-                            }
+                PKCanvasRepresentable(
+                    drawing: $current,
+                    isFingerDrawingEnabled: !pencilOnly,
+                    toolPickerTrigger: toolPickerTrigger
+                )
+                .ignoresSafeArea()
+                .navigationTitle(selectionTitle)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            pencilOnly.toggle()
+                        } label: {
+                            Label(
+                                pencilOnly ? "Pencil Only" : "Any Input",
+                                systemImage: pencilOnly ? "pencil.and.outline" : "hand.draw"
+                            )
                         }
                     }
-
-                    Text(displayedText)
-                      .font(.system(size: 36, weight: .regular, design: .monospaced))
-                      .foregroundColor(.primary)
-                      .onReceive(typewriterTimer) { _ in
-                        // Only advance until we hit the end of the string
-                        if displayCount < fullText.count {
-                          displayCount += 1
-                          displayedText = String(fullText.prefix(displayCount))
-                        }
-                        // Once displayCount == fullText.count, we do nothing and the timer keeps firing
-                        // but the text stays at full length and never resets.
-                      }
-                      .position(x: canvasSize.width / 2, y: 80)
-                      .allowsHitTesting(false)
-
-                    // Pencil-tools button
+                }
+                // MARK: — wrap text into multiple lines, flowing down
+                .overlay(
+                    VStack(alignment: .leading) {
+                        Text(displayedText)
+                            .font(.system(size: 28, weight: .regular, design: .monospaced))
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(nil)
+                            // constrain to ~90% of canvas width for wrapping
+                            .frame(maxWidth: canvasSize.width * 0.9, alignment: .leading)
+                            .padding(.top, 20)
+                            .padding(.leading, 20)
+                        Spacer()
+                    }
+                    , alignment: .topLeading
+                )
+                // MARK: — pencil-tools button in top-right
+                .overlay(
                     Button {
                         toolPickerTrigger &+= 1
                     } label: {
@@ -126,16 +134,23 @@ struct ContentView: View {
                     .padding(.top, 16)
                     .padding(.trailing, 24)
                     .accessibilityLabel("Show Apple Pencil tools")
+                    , alignment: .topTrailing
+                )
+                // MARK: — typewriter animation handler
+                .onReceive(typewriterTimer) { _ in
+                    if displayCount < fullText.count {
+                        displayCount += 1
+                        displayedText = String(fullText.prefix(displayCount))
+                    }
                 }
             }
         }
-        // Sync picked sketch into the canvas
+        // Sync selected sketch into canvas
         .onChange(of: selection) { new in
             if let s = new, let d = store.load(url: s.url) {
                 current = d
             }
         }
-        // Load existing sketches
         .onAppear { store.loadAll() }
         .navigationSplitViewColumnWidth(min: 260, ideal: 300)
     }
