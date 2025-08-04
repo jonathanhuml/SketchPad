@@ -1,7 +1,7 @@
 // === Placement ===
 // File: PKCanvasRepresentable.swift
-// Replace your existing file with this version.
-// Fixes: reliably attaches/shows PKToolPicker when the floating button is tapped.
+// Add to your app target.
+// Uses PKToolPicker.shared(for: UIWindow) so it compiles on SDKs that don't expose the UIWindowScene overload.
 
 import SwiftUI
 import PencilKit
@@ -9,80 +9,95 @@ import UIKit
 
 struct PKCanvasRepresentable: UIViewRepresentable {
     @Binding var drawing: PKDrawing
-    var isFingerDrawingEnabled: Bool = true
-    var toolPickerTrigger: Int = 0   // bump this from SwiftUI to show the picker
+    var isFingerDrawingEnabled: Bool
+    var toolPickerTrigger: Int   // bump this (e.g., &+= 1) to re-show the picker
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         var parent: PKCanvasRepresentable
         var lastTrigger: Int = -1
-        var picker: PKToolPicker?  // keep a strong reference
+
+        weak var toolPicker: PKToolPicker?
+        let canvasView = PKCanvasView()
 
         init(_ parent: PKCanvasRepresentable) {
             self.parent = parent
+            super.init()
+            canvasView.delegate = self
+            canvasView.drawing = parent.drawing
+            canvasView.alwaysBounceVertical = true
+            canvasView.backgroundColor = .clear
+            canvasView.isOpaque = false
+            canvasView.drawingPolicy = parent.isFingerDrawingEnabled ? .anyInput : .pencilOnly
         }
 
-        func attachPickerIfPossible(to canvas: PKCanvasView) {
-            guard let window = canvas.window ?? PKCanvasRepresentable.keyWindow(),
-                  let pk = PKToolPicker.shared(for: window) else { return }
+        // Attach PKToolPicker once we actually have a window.
+        func attachToolPickerIfPossible() {
+            // Already attached?
+            guard toolPicker == nil else { return }
+            // Need a real window first.
+            guard let window = canvasView.window else { return }
 
-            if picker !== pk {
-                picker = pk
-                pk.addObserver(canvas)
+            // SDK exposes only the UIWindow variant here.
+            guard let picker = PKToolPicker.shared(for: window) else { return }
+            toolPicker = picker
+
+            picker.addObserver(canvasView)
+            picker.setVisible(true, forFirstResponder: canvasView)
+
+            // Must be first responder for the picker to appear on device.
+            DispatchQueue.main.async { [weak self] in
+                self?.canvasView.becomeFirstResponder()
             }
         }
 
-        func showPicker(on canvas: PKCanvasView) {
-            guard let pk = picker else { return }
-            pk.setVisible(true, forFirstResponder: canvas)
-            canvas.becomeFirstResponder()
+        func showToolPicker() {
+            // Ensure we’re attached; if not yet in a window, try again shortly.
+            attachToolPickerIfPossible()
+            guard let picker = toolPicker else {
+                DispatchQueue.main.async { [weak self] in self?.showToolPicker() }
+                return
+            }
+            picker.setVisible(true, forFirstResponder: canvasView)
+            canvasView.becomeFirstResponder()
         }
 
-        // PencilKit delegate
+        // MARK: - PKCanvasViewDelegate
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             parent.drawing = canvasView.drawing
+        }
+
+        deinit {
+            toolPicker?.removeObserver(canvasView)
         }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeUIView(context: Context) -> PKCanvasView {
-        let canvas = PKCanvasView()
-        canvas.delegate = context.coordinator
-        canvas.drawing = drawing
-        canvas.backgroundColor = .systemBackground
-
-        // Default tool so you can draw even without the palette (Simulator-friendly)
-        canvas.tool = PKInkingTool(.pen, color: .label, width: 5)
-        canvas.drawingPolicy = isFingerDrawingEnabled ? .anyInput : .pencilOnly
-
-        // Attach picker once the view is in a window (next run loop)
-        DispatchQueue.main.async {
-            context.coordinator.attachPickerIfPossible(to: canvas)
-        }
-        return canvas
+        let v = context.coordinator.canvasView
+        // Defer tool picker attachment until the view is in a window.
+        DispatchQueue.main.async { context.coordinator.attachToolPickerIfPossible() }
+        return v
     }
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
-        if uiView.drawing != drawing { uiView.drawing = drawing }
-        uiView.drawingPolicy = isFingerDrawingEnabled ? .anyInput : .pencilOnly
+        let c = context.coordinator
 
-        // Ensure picker is attached (in case window became available after makeUIView)
-        DispatchQueue.main.async {
-            context.coordinator.attachPickerIfPossible(to: uiView)
-
-            // Respond to the floating button tap
-            if context.coordinator.lastTrigger != toolPickerTrigger {
-                context.coordinator.lastTrigger = toolPickerTrigger
-                context.coordinator.showPicker(on: uiView)
-            }
+        // Sync drawing
+        if uiView.drawing != drawing {
+            uiView.drawing = drawing
         }
-    }
 
-    // Helper: find a key window if SwiftUI hasn't wired uiView.window yet
-    private static func keyWindow() -> UIWindow? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }
+        // Sync input policy
+        let desiredPolicy: PKCanvasViewDrawingPolicy = isFingerDrawingEnabled ? .anyInput : .pencilOnly
+        if uiView.drawingPolicy != desiredPolicy {
+            uiView.drawingPolicy = desiredPolicy
+        }
+
+        // Re-show picker when the trigger changes (from your pencil button).
+        if c.lastTrigger != toolPickerTrigger {
+            c.lastTrigger = toolPickerTrigger
+            c.showToolPicker()
+        }
     }
 }
